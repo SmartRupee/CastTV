@@ -1,0 +1,842 @@
+name: Build Nilesh Cast APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Write project files
+        run: |
+          mkdir -p app/src/main/java/com/nilesh/cast app/src/main/res/drawable
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "NileshCast"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.nilesh.cast'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.nilesh.cast'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/drawable/banner.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:startColor="#1E88E5" android:endColor="#8E24AA" android:angle="45"/>
+              <corners android:radius="12dp"/>
+              <size android:width="320dp" android:height="180dp"/>
+          </shape>
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+              <uses-feature android:name="android.software.leanback" android:required="false"/>
+
+              <application
+                  android:label="Nilesh Cast"
+                  android:icon="@drawable/banner"
+                  android:banner="@drawable/banner"
+                  android:allowBackup="false"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"/>
+
+                  <service
+                      android:name=".CastService"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection"/>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/nilesh/cast/Net.java <<'EOF'
+          package com.nilesh.cast;
+
+          import android.app.UiModeManager;
+          import android.content.Context;
+          import android.content.res.Configuration;
+          import android.os.Build;
+          import java.io.IOException;
+          import java.io.InputStream;
+          import java.net.Inet4Address;
+          import java.net.InetAddress;
+          import java.net.NetworkInterface;
+          import java.net.Socket;
+          import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.List;
+
+          public class Net {
+              public static final int PORT = 8765;
+              public static final String WELCOME = "Welcome! It's free for you.";
+
+              // Hand-off between the listener (MainActivity) and the player screen
+              public static volatile Socket pendingSocket;
+              public static volatile int pendingW;
+              public static volatile int pendingH;
+              public static volatile PlayerActivity player;
+
+              public static boolean isTv(Context c) {
+                  UiModeManager m = (UiModeManager) c.getSystemService(Context.UI_MODE_SERVICE);
+                  return m != null && m.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+              }
+
+              public static String deviceName() {
+                  String n = Build.MANUFACTURER + " " + Build.MODEL;
+                  return n.replace("|", " ").replace("\n", " ").trim();
+              }
+
+              // Reads one text line straight from the stream (no buffering, so binary data after it is untouched)
+              public static String readLine(InputStream in) throws IOException {
+                  StringBuilder sb = new StringBuilder();
+                  while (sb.length() < 200) {
+                      int b = in.read();
+                      if (b < 0) {
+                          if (sb.length() == 0) return null;
+                          break;
+                      }
+                      if (b == '\n') break;
+                      sb.append((char) b);
+                  }
+                  return sb.toString().trim();
+              }
+
+              public static List<String> localIps() {
+                  List<String> r = new ArrayList<>();
+                  try {
+                      for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                          if (!ni.isUp() || ni.isLoopback()) continue;
+                          for (InetAddress a : Collections.list(ni.getInetAddresses())) {
+                              if (a instanceof Inet4Address && a.isSiteLocalAddress()) {
+                                  r.add(a.getHostAddress());
+                              }
+                          }
+                      }
+                  } catch (Exception ignored) {
+                  }
+                  return r;
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/nilesh/cast/MainActivity.java <<'EOF'
+          package com.nilesh.cast;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.ArrayAdapter;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.ListView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+          import java.net.InetSocketAddress;
+          import java.net.ServerSocket;
+          import java.net.Socket;
+          import java.util.ArrayList;
+          import java.util.HashSet;
+          import java.util.List;
+          import java.util.Set;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+          import java.util.concurrent.TimeUnit;
+
+          public class MainActivity extends Activity {
+              private static final int REQ_CAPTURE = 100;
+
+              private final List<String[]> devices = new ArrayList<>(); // {type, name, ip}
+              private final List<String> labels = new ArrayList<>();
+              private ArrayAdapter<String> adapter;
+              private TextView status;
+              private Button scanBtn;
+              private String targetIp;
+              private String targetName;
+              private ServerSocket server;
+              private boolean tv;
+              private final Handler ui = new Handler(Looper.getMainLooper());
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  tv = Net.isTv(this);
+                  float s = tv ? 1.6f : 1f;
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  int pad = (int) (20 * getResources().getDisplayMetrics().density * (tv ? 1.5f : 1f));
+                  root.setPadding(pad, pad, pad, pad);
+
+                  TextView title = new TextView(this);
+                  title.setText("Nilesh Cast");
+                  title.setTextSize(30 * s);
+                  root.addView(title);
+
+                  status = new TextView(this);
+                  status.setTextSize(16 * s);
+                  status.setText("This device: " + (tv ? "TV" : "PHONE") + " - " + Net.deviceName());
+                  root.addView(status);
+
+                  scanBtn = new Button(this);
+                  scanBtn.setText("Scan for devices");
+                  scanBtn.setTextSize(18 * s);
+                  scanBtn.setOnClickListener(v -> scan());
+                  root.addView(scanBtn);
+
+                  Button stopBtn = new Button(this);
+                  stopBtn.setText("Stop casting");
+                  stopBtn.setTextSize(18 * s);
+                  stopBtn.setOnClickListener(v ->
+                          startService(new Intent(MainActivity.this, CastService.class).setAction("STOP")));
+                  root.addView(stopBtn);
+
+                  ListView list = new ListView(this);
+                  adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
+                      @Override
+                      public View getView(int p, View cv, ViewGroup parent) {
+                          TextView t = (TextView) super.getView(p, cv, parent);
+                          t.setTextSize(20 * (tv ? 1.5f : 1f));
+                          return t;
+                      }
+                  };
+                  list.setAdapter(adapter);
+                  list.setOnItemClickListener((p, v, pos, id) -> onDevice(devices.get(pos)));
+                  root.addView(list, new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+                  setContentView(root);
+
+                  if (!tv && Build.VERSION.SDK_INT >= 33) {
+                      requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+                  }
+
+                  startServer();
+                  ui.postDelayed(this::scan, 800);
+              }
+
+              // ---------- Listener: answers scans and accepts incoming casts ----------
+              private void startServer() {
+                  new Thread(() -> {
+                      try {
+                          server = new ServerSocket();
+                          server.setReuseAddress(true);
+                          server.bind(new InetSocketAddress(Net.PORT));
+                          while (!server.isClosed()) {
+                              final Socket s = server.accept();
+                              new Thread(() -> handle(s)).start();
+                          }
+                      } catch (Exception e) {
+                          final String msg = String.valueOf(e.getMessage());
+                          ui.post(() -> status.setText("Listener problem: " + msg));
+                      }
+                  }).start();
+              }
+
+              private void handle(Socket s) {
+                  try {
+                      s.setSoTimeout(5000);
+                      String line = Net.readLine(s.getInputStream());
+                      if (line == null) {
+                          s.close();
+                          return;
+                      }
+                      if (line.startsWith("HELLO")) {
+                          String reply = "NILESH-CAST|" + (tv ? "TV" : "PHONE") + "|" + Net.deviceName() + "\n";
+                          s.getOutputStream().write(reply.getBytes());
+                          s.getOutputStream().flush();
+                          s.close();
+                      } else if (line.startsWith("CAST ")) {
+                          String[] p = line.split(" ");
+                          final int w = Integer.parseInt(p[1]);
+                          final int h = Integer.parseInt(p[2]);
+                          s.setSoTimeout(0);
+                          final PlayerActivity cur = Net.player;
+                          if (cur != null) ui.post(() -> cur.finish());
+                          Net.pendingSocket = s;
+                          Net.pendingW = w;
+                          Net.pendingH = h;
+                          ui.post(() -> startActivity(new Intent(MainActivity.this, PlayerActivity.class)));
+                      } else {
+                          s.close();
+                      }
+                  } catch (Exception e) {
+                      try {
+                          s.close();
+                      } catch (Exception ignored) {
+                      }
+                  }
+              }
+
+              // ---------- Scanning ----------
+              private void scan() {
+                  devices.clear();
+                  labels.clear();
+                  adapter.notifyDataSetChanged();
+                  scanBtn.setEnabled(false);
+                  status.setText("Scanning for devices on this network...");
+                  new Thread(() -> {
+                      final List<String> mine = Net.localIps();
+                      Set<String> prefixes = new HashSet<>();
+                      ExecutorService ex = Executors.newFixedThreadPool(48);
+                      for (String ip : mine) {
+                          String prefix = ip.substring(0, ip.lastIndexOf('.') + 1);
+                          if (!prefixes.add(prefix)) continue;
+                          for (int i = 1; i < 255; i++) {
+                              final String host = prefix + i;
+                              if (mine.contains(host)) continue;
+                              ex.submit(() -> probe(host));
+                          }
+                      }
+                      ex.shutdown();
+                      try {
+                          ex.awaitTermination(40, TimeUnit.SECONDS);
+                      } catch (InterruptedException ignored) {
+                      }
+                      ui.post(() -> {
+                          scanBtn.setEnabled(true);
+                          if (mine.isEmpty()) {
+                              status.setText("No Wi-Fi or hotspot network found. Connect both devices to the same network.");
+                          } else {
+                              status.setText("Scan done. Found " + devices.size() + " device(s). Tap one to connect.");
+                          }
+                      });
+                  }).start();
+              }
+
+              private void probe(String host) {
+                  try (Socket s = new Socket()) {
+                      s.connect(new InetSocketAddress(host, Net.PORT), 500);
+                      s.setSoTimeout(1500);
+                      s.getOutputStream().write("HELLO\n".getBytes());
+                      s.getOutputStream().flush();
+                      String r = Net.readLine(s.getInputStream());
+                      if (r != null && r.startsWith("NILESH-CAST|")) {
+                          String[] p = r.split("\\|", 3);
+                          if (p.length == 3) addDevice(p[1], p[2], host);
+                      }
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private void addDevice(final String type, final String name, final String ip) {
+                  ui.post(() -> {
+                      for (String[] d : devices) {
+                          if (d[2].equals(ip)) return;
+                      }
+                      devices.add(new String[]{type, name, ip});
+                      labels.add("[" + type + "]  " + name + "  (" + ip + ")");
+                      adapter.notifyDataSetChanged();
+                  });
+              }
+
+              // ---------- Casting ----------
+              private void onDevice(String[] d) {
+                  if (tv) {
+                      Toast.makeText(this, "Open Nilesh Cast on your phone and tap this TV to cast.",
+                              Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  targetIp = d[2];
+                  targetName = d[1];
+                  MediaProjectionManager m =
+                          (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                  startActivityForResult(m.createScreenCaptureIntent(), REQ_CAPTURE);
+              }
+
+              @Override
+              protected void onActivityResult(int req, int res, Intent data) {
+                  super.onActivityResult(req, res, data);
+                  if (req != REQ_CAPTURE) return;
+                  if (res == RESULT_OK && data != null) {
+                      Intent i = new Intent(this, CastService.class);
+                      i.putExtra("code", res);
+                      i.putExtra("data", data);
+                      i.putExtra("host", targetIp);
+                      i.putExtra("name", targetName);
+                      startForegroundService(i);
+                      status.setText("Connecting to " + targetName + "...");
+                  } else {
+                      status.setText("Screen capture permission was denied.");
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  super.onDestroy();
+                  try {
+                      if (server != null) server.close();
+                  } catch (Exception ignored) {
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/nilesh/cast/CastService.java <<'EOF'
+          package com.nilesh.cast;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.hardware.display.DisplayManager;
+          import android.hardware.display.VirtualDisplay;
+          import android.media.MediaCodec;
+          import android.media.MediaCodecInfo;
+          import android.media.MediaFormat;
+          import android.media.projection.MediaProjection;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.IBinder;
+          import android.os.Looper;
+          import android.util.DisplayMetrics;
+          import android.view.Surface;
+          import android.widget.Toast;
+          import java.io.BufferedOutputStream;
+          import java.io.DataOutputStream;
+          import java.net.InetSocketAddress;
+          import java.net.Socket;
+          import java.nio.ByteBuffer;
+
+          public class CastService extends Service {
+              private static final String CH = "cast";
+
+              private MediaProjection projection;
+              private MediaProjection.Callback projectionCallback;
+              private VirtualDisplay display;
+              private MediaCodec encoder;
+              private Socket socket;
+              private volatile boolean running;
+              private final Handler ui = new Handler(Looper.getMainLooper());
+
+              @Override
+              public IBinder onBind(Intent i) {
+                  return null;
+              }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent == null || "STOP".equals(intent.getAction())) {
+                      stopCast();
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+
+                  NotificationManager nm = getSystemService(NotificationManager.class);
+                  nm.createNotificationChannel(
+                          new NotificationChannel(CH, "Casting", NotificationManager.IMPORTANCE_LOW));
+                  Intent stop = new Intent(this, CastService.class).setAction("STOP");
+                  PendingIntent pi = PendingIntent.getService(this, 0, stop, PendingIntent.FLAG_IMMUTABLE);
+                  Notification n = new Notification.Builder(this, CH)
+                          .setContentTitle("Nilesh Cast")
+                          .setContentText("Casting your screen. Tap to stop.")
+                          .setSmallIcon(android.R.drawable.ic_media_play)
+                          .setContentIntent(pi)
+                          .build();
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                  } else {
+                      startForeground(1, n);
+                  }
+
+                  stopCast();
+
+                  int code = intent.getIntExtra("code", 0);
+                  Intent data = intent.getParcelableExtra("data");
+                  final String host = intent.getStringExtra("host");
+                  final String name = intent.getStringExtra("name");
+
+                  MediaProjectionManager m =
+                          (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+                  projection = m.getMediaProjection(code, data);
+                  projectionCallback = new MediaProjection.Callback() {
+                      @Override
+                      public void onStop() {
+                          stopCast();
+                          stopSelf();
+                      }
+                  };
+                  projection.registerCallback(projectionCallback, ui);
+
+                  running = true;
+                  new Thread(() -> runCast(host, name)).start();
+                  return START_NOT_STICKY;
+              }
+
+              private void toast(final String msg) {
+                  ui.post(() -> Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show());
+              }
+
+              private void runCast(String host, String name) {
+                  try {
+                      DisplayMetrics dm = getResources().getDisplayMetrics();
+                      int w0 = dm.widthPixels;
+                      int h0 = dm.heightPixels;
+                      float sc = Math.min(1f, 1280f / Math.max(w0, h0));
+                      int w = ((int) (w0 * sc)) / 16 * 16;
+                      int h = ((int) (h0 * sc)) / 16 * 16;
+
+                      Socket s = new Socket();
+                      s.connect(new InetSocketAddress(host, Net.PORT), 4000);
+                      s.setTcpNoDelay(true);
+                      socket = s;
+                      DataOutputStream out =
+                              new DataOutputStream(new BufferedOutputStream(s.getOutputStream(), 1 << 16));
+                      out.write(("CAST " + w + " " + h + "\n").getBytes());
+                      out.flush();
+                      toast("Connected to " + name + ". " + Net.WELCOME);
+
+                      MediaFormat f = MediaFormat.createVideoFormat("video/avc", w, h);
+                      f.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                              MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+                      f.setInteger(MediaFormat.KEY_BIT_RATE, 3000000);
+                      f.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
+                      f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
+                      f.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100000L);
+
+                      MediaCodec enc = MediaCodec.createEncoderByType("video/avc");
+                      enc.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+                      Surface inputSurface = enc.createInputSurface();
+                      enc.start();
+                      encoder = enc;
+
+                      display = projection.createVirtualDisplay("NileshCast", w, h, dm.densityDpi,
+                              DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, inputSurface, null, null);
+
+                      MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                      while (running) {
+                          int idx = enc.dequeueOutputBuffer(info, 100000);
+                          if (idx >= 0) {
+                              ByteBuffer buf = enc.getOutputBuffer(idx);
+                              byte[] bytes = new byte[info.size];
+                              buf.position(info.offset);
+                              buf.limit(info.offset + info.size);
+                              buf.get(bytes);
+                              out.writeInt(info.size);
+                              out.writeInt(info.flags);
+                              out.writeLong(info.presentationTimeUs);
+                              out.write(bytes);
+                              out.flush();
+                              enc.releaseOutputBuffer(idx, false);
+                          }
+                      }
+                  } catch (Exception e) {
+                      if (running) toast("Casting stopped: " + e.getMessage());
+                  } finally {
+                      stopCast();
+                      stopSelf();
+                  }
+              }
+
+              private synchronized void stopCast() {
+                  running = false;
+                  try {
+                      if (display != null) display.release();
+                  } catch (Exception ignored) {
+                  }
+                  display = null;
+                  try {
+                      if (encoder != null) {
+                          encoder.stop();
+                          encoder.release();
+                      }
+                  } catch (Exception ignored) {
+                  }
+                  encoder = null;
+                  try {
+                      if (socket != null) socket.close();
+                  } catch (Exception ignored) {
+                  }
+                  socket = null;
+                  MediaProjection p = projection;
+                  projection = null;
+                  try {
+                      if (p != null) {
+                          if (projectionCallback != null) p.unregisterCallback(projectionCallback);
+                          p.stop();
+                      }
+                  } catch (Exception ignored) {
+                  }
+                  projectionCallback = null;
+              }
+
+              @Override
+              public void onDestroy() {
+                  stopCast();
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/nilesh/cast/PlayerActivity.java <<'EOF'
+          package com.nilesh.cast;
+
+          import android.app.Activity;
+          import android.graphics.Color;
+          import android.media.MediaCodec;
+          import android.media.MediaFormat;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.util.DisplayMetrics;
+          import android.view.Gravity;
+          import android.view.Surface;
+          import android.view.SurfaceHolder;
+          import android.view.SurfaceView;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.widget.FrameLayout;
+          import android.widget.TextView;
+          import java.io.BufferedInputStream;
+          import java.io.DataInputStream;
+          import java.net.Socket;
+          import java.nio.ByteBuffer;
+
+          public class PlayerActivity extends Activity implements SurfaceHolder.Callback {
+              private Socket sock;
+              private int vw;
+              private int vh;
+              private volatile boolean running;
+              private Thread worker;
+              private SurfaceView sv;
+              private TextView welcome;
+              private final Handler ui = new Handler(Looper.getMainLooper());
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                          | WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                  sock = Net.pendingSocket;
+                  vw = Net.pendingW;
+                  vh = Net.pendingH;
+                  Net.pendingSocket = null;
+                  if (sock == null || vw <= 0 || vh <= 0) {
+                      finish();
+                      return;
+                  }
+                  Net.player = this;
+
+                  FrameLayout root = new FrameLayout(this);
+                  root.setBackgroundColor(Color.BLACK);
+
+                  DisplayMetrics dm = getResources().getDisplayMetrics();
+                  float k = Math.min((float) dm.widthPixels / vw, (float) dm.heightPixels / vh);
+                  sv = new SurfaceView(this);
+                  root.addView(sv, new FrameLayout.LayoutParams((int) (vw * k), (int) (vh * k), Gravity.CENTER));
+
+                  welcome = new TextView(this);
+                  welcome.setText(Net.WELCOME);
+                  welcome.setTextColor(Color.WHITE);
+                  welcome.setTextSize(28);
+                  welcome.setPadding(40, 20, 40, 20);
+                  welcome.setBackgroundColor(0xAA000000);
+                  root.addView(welcome, new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.WRAP_CONTENT,
+                          FrameLayout.LayoutParams.WRAP_CONTENT,
+                          Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+
+                  setContentView(root);
+                  sv.getHolder().addCallback(this);
+                  ui.postDelayed(() -> welcome.setVisibility(View.GONE), 5000);
+              }
+
+              @Override
+              public void surfaceCreated(SurfaceHolder holder) {
+                  running = true;
+                  final Surface surface = holder.getSurface();
+                  worker = new Thread(() -> decode(surface));
+                  worker.start();
+              }
+
+              @Override
+              public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+              }
+
+              @Override
+              public void surfaceDestroyed(SurfaceHolder holder) {
+                  stopAll();
+                  try {
+                      if (worker != null) worker.join(1000);
+                  } catch (InterruptedException ignored) {
+                  }
+              }
+
+              private void decode(Surface surface) {
+                  MediaCodec dec = null;
+                  try {
+                      dec = MediaCodec.createDecoderByType("video/avc");
+                      dec.configure(MediaFormat.createVideoFormat("video/avc", vw, vh), surface, null, 0);
+                      dec.start();
+                      DataInputStream in = new DataInputStream(new BufferedInputStream(sock.getInputStream(), 1 << 16));
+                      MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                      while (running) {
+                          int size = in.readInt();
+                          int fl = in.readInt();
+                          long pts = in.readLong();
+                          if (size < 0 || size > 8000000) break;
+                          byte[] data = new byte[size];
+                          in.readFully(data);
+
+                          int idx = -1;
+                          while (running) {
+                              idx = dec.dequeueInputBuffer(10000);
+                              if (idx >= 0) break;
+                              drain(dec, info);
+                          }
+                          if (idx < 0) break;
+                          ByteBuffer ib = dec.getInputBuffer(idx);
+                          ib.clear();
+                          ib.put(data);
+                          dec.queueInputBuffer(idx, 0, size, pts, fl);
+                          drain(dec, info);
+                      }
+                  } catch (Exception ignored) {
+                  } finally {
+                      try {
+                          if (dec != null) {
+                              dec.stop();
+                              dec.release();
+                          }
+                      } catch (Exception ignored) {
+                      }
+                      stopAll();
+                      ui.post(() -> finish());
+                  }
+              }
+
+              private void drain(MediaCodec dec, MediaCodec.BufferInfo info) {
+                  while (true) {
+                      int o = dec.dequeueOutputBuffer(info, 0);
+                      if (o >= 0) {
+                          dec.releaseOutputBuffer(o, true);
+                      } else if (o == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                          break;
+                      }
+                  }
+              }
+
+              private void stopAll() {
+                  running = false;
+                  try {
+                      if (sock != null) sock.close();
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  stopAll();
+                  if (Net.player == this) Net.player = null;
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Nilesh-Cast.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nilesh-Cast-APK
+          path: Nilesh-Cast.apk
+
+      - name: Publish release (easy download on phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Nilesh Cast build ${{ github.run_number }}
+          files: Nilesh-Cast.apk
