@@ -1,0 +1,2632 @@
+name: Build Nilesh Cast UI APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Write project files
+        run: |
+          mkdir -p "$(dirname 'app/build.gradle.kts')"
+          cat > 'app/build.gradle.kts' <<'KTEOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.nilesh.cast"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.nilesh.cast.ui"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+          }
+
+          dependencies {
+              implementation(platform("androidx.compose:compose-bom:2024.09.03"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+              implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+              implementation("androidx.core:core-ktx:1.13.1")
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/AndroidManifest.xml')"
+          cat > 'app/src/main/AndroidManifest.xml' <<'KTEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
+              <application
+                  android:label="Nilesh Cast"
+                  android:allowBackup="false"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/MainActivity.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/MainActivity.kt' <<'KTEOF'
+          package com.nilesh.cast
+
+          import android.graphics.Color
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.SystemBarStyle
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import com.nilesh.cast.ui.MainBrowserScreen
+          import com.nilesh.cast.ui.theme.CastTheme
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  enableEdgeToEdge(
+                      statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                      navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+                  )
+                  setContent {
+                      CastTheme {
+                          MainBrowserScreen()
+                      }
+                  }
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/CastComponents.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/CastComponents.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Cast
+          import androidx.compose.material.icons.filled.Info
+          import androidx.compose.material.icons.filled.LiveTv
+          import androidx.compose.material.icons.filled.Movie
+          import androidx.compose.material.icons.filled.Replay
+          import androidx.compose.material.icons.filled.Router
+          import androidx.compose.material.icons.filled.SmartDisplay
+          import androidx.compose.material.icons.filled.Tv
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.LocalContentColor
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.SliderColors
+          import androidx.compose.material3.SliderDefaults
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.nilesh.cast.ui.theme.CastColors
+
+          fun hostOf(url: String): String =
+              url.removePrefix("https://").removePrefix("http://").substringBefore('/').removePrefix("www.")
+
+          fun CastProtocol.icon(): ImageVector = when (this) {
+              CastProtocol.Chromecast -> Icons.Filled.Cast
+              CastProtocol.Roku -> Icons.Filled.SmartDisplay
+              CastProtocol.WebOS -> Icons.Filled.Tv
+              CastProtocol.Tizen -> Icons.Filled.LiveTv
+              CastProtocol.Dlna -> Icons.Filled.Router
+          }
+
+          @Composable
+          fun PosterArt(
+              accent: Color,
+              modifier: Modifier = Modifier,
+              iconSize: Dp = 24.dp,
+              cornerRadius: Dp = 10.dp
+          ) {
+              Box(
+                  modifier = modifier
+                      .clip(RoundedCornerShape(cornerRadius))
+                      .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.45f), CastColors.Card))),
+                  contentAlignment = Alignment.Center
+              ) {
+                  Icon(
+                      imageVector = Icons.Filled.Movie,
+                      contentDescription = null,
+                      tint = Color.White.copy(alpha = 0.85f),
+                      modifier = Modifier.size(iconSize)
+                  )
+              }
+          }
+
+          @Composable
+          fun QualityBadge(text: String, modifier: Modifier = Modifier, color: Color = CastColors.Cyan) {
+              Text(
+                  text = text,
+                  color = color,
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  modifier = modifier
+                      .clip(RoundedCornerShape(6.dp))
+                      .background(color.copy(alpha = 0.16f))
+                      .padding(horizontal = 8.dp, vertical = 3.dp)
+              )
+          }
+
+          @Composable
+          fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+              Text(
+                  text = text.uppercase(),
+                  color = CastColors.TextSecondary,
+                  style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp),
+                  modifier = modifier
+              )
+          }
+
+          @Composable
+          fun SeekBackIcon(seconds: Int, modifier: Modifier = Modifier, size: Dp = 24.dp, tint: Color = LocalContentColor.current) {
+              Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+                  Icon(Icons.Filled.Replay, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
+                  Text(
+                      text = seconds.toString(),
+                      color = tint,
+                      fontSize = (size.value * 0.32f).sp,
+                      fontWeight = FontWeight.Bold,
+                      modifier = Modifier.padding(top = (size.value * 0.06f).dp)
+                  )
+              }
+          }
+
+          @Composable
+          fun castSliderColors(): SliderColors = SliderDefaults.colors(
+              thumbColor = CastColors.Cyan,
+              activeTrackColor = CastColors.Cyan,
+              inactiveTrackColor = CastColors.Outline,
+              disabledThumbColor = CastColors.Outline,
+              disabledActiveTrackColor = CastColors.Outline,
+              disabledInactiveTrackColor = CastColors.CardHigh
+          )
+
+          @Composable
+          fun InfoBanner(text: String, modifier: Modifier = Modifier) {
+              Row(
+                  modifier = modifier
+                      .fillMaxWidth()
+                      .clip(RoundedCornerShape(12.dp))
+                      .background(CastColors.CardHigh)
+                      .border(1.dp, CastColors.Outline, RoundedCornerShape(12.dp))
+                      .padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+              ) {
+                  Icon(Icons.Filled.Info, contentDescription = null, tint = CastColors.TextSecondary, modifier = Modifier.size(18.dp))
+                  Text(text, color = CastColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/CastUiState.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/CastUiState.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.runtime.Immutable
+          import androidx.compose.ui.graphics.Color
+          import java.util.Locale
+
+          enum class DeviceGroup(val title: String) {
+              Streaming("Streaming Devices"),
+              SmartTv("Smart TVs & DLNA")
+          }
+
+          enum class CastProtocol(
+              val tag: String,
+              val group: DeviceGroup,
+              val hint: String,
+              val supportsRemoteInput: Boolean
+          ) {
+              Chromecast("Google Cast", DeviceGroup.Streaming, "Instant cast, no pairing needed", true),
+              Roku("Roku ECP", DeviceGroup.Streaming, "Transcoding on phone", true),
+              WebOS("LG WebOS", DeviceGroup.SmartTv, "Requires TV PIN approval", true),
+              Tizen("Samsung Tizen", DeviceGroup.SmartTv, "Accept the connection prompt on the TV", true),
+              Dlna("DLNA / UPnP", DeviceGroup.SmartTv, "Basic playback only, seeking depends on the TV", false)
+          }
+
+          @Immutable
+          data class CastDevice(
+              val id: String,
+              val name: String,
+              val model: String,
+              val ipAddress: String,
+              val protocol: CastProtocol,
+              val supportsSeek: Boolean
+          )
+
+          enum class StreamKind { Main, Preview, Ad }
+
+          @Immutable
+          data class DetectedStream(
+              val id: String,
+              val title: String,
+              val url: String,
+              val quality: String,
+              val container: String,
+              val sizeLabel: String,
+              val durationMs: Long,
+              val kind: StreamKind,
+              val posterAccent: Color
+          ) {
+              val isRecommended: Boolean get() = kind == StreamKind.Main
+              val isAd: Boolean get() = kind == StreamKind.Ad
+          }
+
+          @Immutable
+          data class NowPlaying(
+              val stream: DetectedStream,
+              val positionMs: Long = 0L,
+              val isPlaying: Boolean = true
+          ) {
+              val progress: Float
+                  get() = if (stream.durationMs > 0) {
+                      (positionMs.toFloat() / stream.durationMs).coerceIn(0f, 1f)
+                  } else 0f
+          }
+
+          @Immutable
+          data class QueueItem(val queueId: String, val stream: DetectedStream)
+
+          @Immutable
+          data class RecentSite(val title: String, val url: String)
+
+          enum class QuickAccess(val title: String, val subtitle: String) {
+              LocalMedia("Local Media", "Photos & videos"),
+              IptvM3u("IPTV M3U", "Playlists"),
+              Bookmarks("Bookmarks", "Saved sites")
+          }
+
+          enum class ActiveSheet { None, DevicePicker, DetectedMedia, ExpandedRemote }
+
+          enum class RemoteTab(val title: String) {
+              SubtitleSync("Subtitle Sync"),
+              DPad("D-Pad"),
+              Queue("Queue")
+          }
+
+          enum class DpadKey(val label: String) {
+              Up("Up"), Down("Down"), Left("Left"), Right("Right"), Ok("OK"), Back("Back"), Home("Home")
+          }
+
+          @Immutable
+          data class CastUiState(
+              val currentUrl: String = "",
+              val urlInput: String = "",
+              val isLoading: Boolean = false,
+              val canGoBack: Boolean = false,
+              val canGoForward: Boolean = false,
+              val adsBlocked: Int = 0,
+              val devices: List<CastDevice> = emptyList(),
+              val isScanning: Boolean = false,
+              val connectedDevice: CastDevice? = null,
+              val detectedStreams: List<DetectedStream> = emptyList(),
+              val nowPlaying: NowPlaying? = null,
+              val queue: List<QueueItem> = emptyList(),
+              val recents: List<RecentSite> = emptyList(),
+              val volume: Float = 0.45f,
+              val routeAudioToPhone: Boolean = false,
+              val subtitleDelayMs: Int = 0,
+              val subtitleFileName: String? = null,
+              val remoteTab: RemoteTab = RemoteTab.SubtitleSync,
+              val lastDpadKey: DpadKey? = null,
+              val activeSheet: ActiveSheet = ActiveSheet.None,
+              val message: String? = null
+          ) {
+              val hasPage: Boolean get() = currentUrl.isNotEmpty()
+              val isConnected: Boolean get() = connectedDevice != null
+              val isCasting: Boolean get() = connectedDevice != null && nowPlaying != null
+              val canSeek: Boolean get() = connectedDevice?.supportsSeek == true && nowPlaying != null
+              val mainStream: DetectedStream? get() = detectedStreams.firstOrNull { it.isRecommended }
+              val otherStreams: List<DetectedStream> get() = detectedStreams.filterNot { it.isRecommended }
+              val statusLabel: String get() = connectedDevice?.let { "${it.name} \u2022 CAST" } ?: "Tap to Cast"
+          }
+
+          interface CastActions {
+              // Browser
+              fun onUrlInputChange(value: String)
+              fun onSubmitUrl()
+              fun onOpenUrl(url: String)
+              fun onGoHome()
+              fun onBack()
+              fun onForward()
+              fun onQuickAccess(item: QuickAccess)
+              fun onResetAdCounter()
+
+              // Sheets
+              fun onShowDevicePicker()
+              fun onShowDetectedMedia()
+              fun onShowRemote()
+              fun onDismissSheet()
+
+              // Devices
+              fun onRescanDevices()
+              fun onConnectDevice(id: String)
+              fun onDisconnect()
+              fun onVolumeChange(value: Float)
+              fun onRouteAudioToPhone(enabled: Boolean)
+
+              // Streams and playback
+              fun onCastStream(id: String)
+              fun onAddToQueue(id: String)
+              fun onLinkCopied(id: String)
+              fun onTogglePlayPause()
+              fun onSeekBy(deltaMs: Long)
+              fun onSeekToFraction(fraction: Float)
+
+              // Remote utilities
+              fun onSelectRemoteTab(tab: RemoteTab)
+              fun onSubtitleDelay(deltaMs: Int)
+              fun onResetSubtitleDelay()
+              fun onSubtitleSelected(fileName: String)
+              fun onDpad(key: DpadKey)
+              fun onPlayQueueItem(queueId: String)
+              fun onRemoveQueueItem(queueId: String)
+
+              fun onMessageShown()
+          }
+
+          fun formatDuration(ms: Long): String {
+              val total = (ms / 1000).coerceAtLeast(0)
+              val h = total / 3600
+              val m = (total % 3600) / 60
+              val s = total % 60
+              return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+              else String.format(Locale.US, "%d:%02d", m, s)
+          }
+
+          fun formatDelay(ms: Int): String = String.format(Locale.US, "%+.1fs", ms / 1000f)
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/CastViewModel.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/CastViewModel.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.ui.graphics.Color
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewModelScope
+          import kotlinx.coroutines.Job
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          import kotlinx.coroutines.flow.update
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
+          import java.net.URLEncoder
+          import java.util.UUID
+          import kotlin.random.Random
+
+          class CastViewModel : ViewModel(), CastActions {
+
+              private val _uiState = MutableStateFlow(
+                  CastUiState(
+                      adsBlocked = 128,
+                      devices = MockCastData.devices,
+                      detectedStreams = MockCastData.streams,
+                      queue = MockCastData.queue,
+                      recents = MockCastData.recents
+                  )
+              )
+              val uiState: StateFlow<CastUiState> = _uiState.asStateFlow()
+
+              private val history = mutableListOf<String>()
+              private var historyIndex = -1
+              private var loadJob: Job? = null
+              private var scanJob: Job? = null
+              private var pendingCastStreamId: String? = null
+
+              init {
+                  viewModelScope.launch {
+                      while (isActive) {
+                          delay(TICK_MS)
+                          advancePlayback()
+                      }
+                  }
+              }
+
+              // ---------------------------------------------------------------- Browser
+
+              override fun onUrlInputChange(value: String) {
+                  _uiState.update { it.copy(urlInput = value) }
+              }
+
+              override fun onSubmitUrl() {
+                  onOpenUrl(_uiState.value.urlInput)
+              }
+
+              override fun onOpenUrl(url: String) {
+                  val target = normalize(url)
+                  if (target.isEmpty()) return
+                  while (history.size > historyIndex + 1) history.removeAt(history.lastIndex)
+                  history.add(target)
+                  historyIndex = history.lastIndex
+                  showPage(target)
+              }
+
+              override fun onGoHome() {
+                  history.clear()
+                  historyIndex = -1
+                  showPage("")
+              }
+
+              override fun onBack() {
+                  if (historyIndex < 0) return
+                  historyIndex--
+                  showPage(if (historyIndex < 0) "" else history[historyIndex])
+              }
+
+              override fun onForward() {
+                  if (historyIndex >= history.lastIndex) return
+                  historyIndex++
+                  showPage(history[historyIndex])
+              }
+
+              override fun onQuickAccess(item: QuickAccess) {
+                  val text = when (item) {
+                      QuickAccess.LocalMedia -> "Local Media: pick a video from this phone to cast"
+                      QuickAccess.IptvM3u -> "IPTV: import an M3U playlist to browse channels"
+                      QuickAccess.Bookmarks -> "Bookmarks: you have no saved sites yet"
+                  }
+                  _uiState.update { it.copy(message = text) }
+              }
+
+              override fun onResetAdCounter() {
+                  _uiState.update { it.copy(adsBlocked = 0) }
+              }
+
+              private fun showPage(url: String) {
+                  loadJob?.cancel()
+                  _uiState.update {
+                      it.copy(
+                          currentUrl = url,
+                          urlInput = url,
+                          isLoading = url.isNotEmpty(),
+                          canGoBack = historyIndex >= 0,
+                          canGoForward = historyIndex < history.lastIndex
+                      )
+                  }
+                  if (url.isEmpty()) return
+                  loadJob = viewModelScope.launch {
+                      delay(650)
+                      _uiState.update {
+                          it.copy(isLoading = false, adsBlocked = it.adsBlocked + Random.nextInt(3, 14))
+                      }
+                  }
+              }
+
+              private fun normalize(input: String): String {
+                  val t = input.trim()
+                  return when {
+                      t.isEmpty() -> ""
+                      t.startsWith("http://") || t.startsWith("https://") -> t
+                      !t.contains(' ') && t.contains('.') -> "https://$t"
+                      else -> "https://duckduckgo.com/?q=" + URLEncoder.encode(t, "UTF-8")
+                  }
+              }
+
+              // ----------------------------------------------------------------- Sheets
+
+              override fun onShowDevicePicker() {
+                  _uiState.update { it.copy(activeSheet = ActiveSheet.DevicePicker) }
+              }
+
+              override fun onShowDetectedMedia() {
+                  _uiState.update {
+                      if (it.detectedStreams.isEmpty()) it else it.copy(activeSheet = ActiveSheet.DetectedMedia)
+                  }
+              }
+
+              override fun onShowRemote() {
+                  _uiState.update {
+                      if (it.nowPlaying == null) it else it.copy(activeSheet = ActiveSheet.ExpandedRemote)
+                  }
+              }
+
+              override fun onDismissSheet() {
+                  pendingCastStreamId = null
+                  _uiState.update { it.copy(activeSheet = ActiveSheet.None) }
+              }
+
+              // ---------------------------------------------------------------- Devices
+
+              override fun onRescanDevices() {
+                  scanJob?.cancel()
+                  scanJob = viewModelScope.launch {
+                      _uiState.update { it.copy(isScanning = true) }
+                      delay(1800)
+                      _uiState.update { it.copy(isScanning = false, devices = MockCastData.devices) }
+                  }
+              }
+
+              override fun onConnectDevice(id: String) {
+                  val device = _uiState.value.devices.firstOrNull { it.id == id } ?: return
+                  val pending = pendingCastStreamId
+                  pendingCastStreamId = null
+                  _uiState.update {
+                      it.copy(
+                          connectedDevice = device,
+                          activeSheet = if (pending != null) ActiveSheet.None else it.activeSheet,
+                          message = "Connected to ${device.name}"
+                      )
+                  }
+                  if (pending != null) onCastStream(pending)
+              }
+
+              override fun onDisconnect() {
+                  pendingCastStreamId = null
+                  _uiState.update {
+                      it.copy(
+                          connectedDevice = null,
+                          nowPlaying = null,
+                          activeSheet = ActiveSheet.None,
+                          message = "Disconnected"
+                      )
+                  }
+              }
+
+              override fun onVolumeChange(value: Float) {
+                  _uiState.update { it.copy(volume = value.coerceIn(0f, 1f)) }
+              }
+
+              override fun onRouteAudioToPhone(enabled: Boolean) {
+                  _uiState.update { it.copy(routeAudioToPhone = enabled) }
+              }
+
+              // ------------------------------------------------------ Streams/playback
+
+              override fun onCastStream(id: String) {
+                  val state = _uiState.value
+                  val stream = state.detectedStreams.firstOrNull { it.id == id } ?: return
+                  val device = state.connectedDevice
+                  if (device == null) {
+                      pendingCastStreamId = id
+                      _uiState.update {
+                          it.copy(activeSheet = ActiveSheet.DevicePicker, message = "Choose a device to cast to")
+                      }
+                      return
+                  }
+                  _uiState.update {
+                      it.copy(
+                          nowPlaying = NowPlaying(stream = stream),
+                          activeSheet = ActiveSheet.None,
+                          message = "Casting \"${stream.title}\" to ${device.name}"
+                      )
+                  }
+              }
+
+              override fun onAddToQueue(id: String) {
+                  val stream = _uiState.value.detectedStreams.firstOrNull { it.id == id } ?: return
+                  _uiState.update {
+                      it.copy(
+                          queue = it.queue + QueueItem(UUID.randomUUID().toString(), stream),
+                          message = "Added to queue"
+                      )
+                  }
+              }
+
+              override fun onLinkCopied(id: String) {
+                  _uiState.update { it.copy(message = "Link copied") }
+              }
+
+              override fun onTogglePlayPause() {
+                  _uiState.update { s ->
+                      val np = s.nowPlaying ?: return@update s
+                      val atEnd = np.positionMs >= np.stream.durationMs
+                      s.copy(
+                          nowPlaying = np.copy(
+                              isPlaying = !np.isPlaying,
+                              positionMs = if (atEnd) 0L else np.positionMs
+                          )
+                      )
+                  }
+              }
+
+              override fun onSeekBy(deltaMs: Long) {
+                  _uiState.update { s ->
+                      val np = s.nowPlaying ?: return@update s
+                      if (!s.canSeek) return@update s
+                      s.copy(
+                          nowPlaying = np.copy(
+                              positionMs = (np.positionMs + deltaMs).coerceIn(0L, np.stream.durationMs)
+                          )
+                      )
+                  }
+              }
+
+              override fun onSeekToFraction(fraction: Float) {
+                  _uiState.update { s ->
+                      val np = s.nowPlaying ?: return@update s
+                      if (!s.canSeek) return@update s
+                      s.copy(
+                          nowPlaying = np.copy(
+                              positionMs = (fraction.coerceIn(0f, 1f) * np.stream.durationMs).toLong()
+                          )
+                      )
+                  }
+              }
+
+              private fun advancePlayback() {
+                  _uiState.update { s ->
+                      val np = s.nowPlaying ?: return@update s
+                      if (!np.isPlaying) return@update s
+                      val next = np.positionMs + TICK_MS
+                      when {
+                          next < np.stream.durationMs -> s.copy(nowPlaying = np.copy(positionMs = next))
+                          s.queue.isNotEmpty() -> s.copy(
+                              nowPlaying = NowPlaying(stream = s.queue.first().stream),
+                              queue = s.queue.drop(1)
+                          )
+                          else -> s.copy(
+                              nowPlaying = np.copy(positionMs = np.stream.durationMs, isPlaying = false)
+                          )
+                      }
+                  }
+              }
+
+              // ------------------------------------------------------ Remote utilities
+
+              override fun onSelectRemoteTab(tab: RemoteTab) {
+                  _uiState.update { it.copy(remoteTab = tab) }
+              }
+
+              override fun onSubtitleDelay(deltaMs: Int) {
+                  _uiState.update {
+                      it.copy(subtitleDelayMs = (it.subtitleDelayMs + deltaMs).coerceIn(-10_000, 10_000))
+                  }
+              }
+
+              override fun onResetSubtitleDelay() {
+                  _uiState.update { it.copy(subtitleDelayMs = 0) }
+              }
+
+              override fun onSubtitleSelected(fileName: String) {
+                  _uiState.update { it.copy(subtitleFileName = fileName, message = "Subtitles loaded: $fileName") }
+              }
+
+              override fun onDpad(key: DpadKey) {
+                  _uiState.update { it.copy(lastDpadKey = key) }
+              }
+
+              override fun onPlayQueueItem(queueId: String) {
+                  _uiState.update { s ->
+                      val item = s.queue.firstOrNull { it.queueId == queueId } ?: return@update s
+                      s.copy(
+                          nowPlaying = NowPlaying(stream = item.stream),
+                          queue = s.queue.filterNot { it.queueId == queueId }
+                      )
+                  }
+              }
+
+              override fun onRemoveQueueItem(queueId: String) {
+                  _uiState.update { s -> s.copy(queue = s.queue.filterNot { it.queueId == queueId }) }
+              }
+
+              override fun onMessageShown() {
+                  _uiState.update { it.copy(message = null) }
+              }
+
+              private companion object {
+                  const val TICK_MS = 500L
+              }
+          }
+
+          private object MockCastData {
+              val devices = listOf(
+                  CastDevice("cc-1", "Living Room TV", "Chromecast with Google TV", "192.168.1.21", CastProtocol.Chromecast, true),
+                  CastDevice("roku-1", "Bedroom Roku", "Roku Ultra", "192.168.1.34", CastProtocol.Roku, true),
+                  CastDevice("lg-1", "LG OLED C3", "LG WebOS 23", "192.168.1.40", CastProtocol.WebOS, true),
+                  CastDevice("sam-1", "Samsung Q80", "Tizen 7.0", "192.168.1.52", CastProtocol.Tizen, true),
+                  CastDevice("dlna-1", "Sony Bravia", "DLNA MediaRenderer", "192.168.1.63", CastProtocol.Dlna, false)
+              )
+
+              val streams = listOf(
+                  DetectedStream(
+                      id = "s-main",
+                      title = "Midnight Express - Full Episode",
+                      url = "https://cdn.example.com/media/midnight_express_1080p.mp4",
+                      quality = "1080p",
+                      container = "MP4",
+                      sizeLabel = "842 MB",
+                      durationMs = 2_538_000L,
+                      kind = StreamKind.Main,
+                      posterAccent = Color(0xFF1565C0)
+                  ),
+                  DetectedStream(
+                      id = "s-preview",
+                      title = "Episode Preview",
+                      url = "https://cdn.example.com/media/midnight_express_preview_480p.mp4",
+                      quality = "480p",
+                      container = "MP4",
+                      sizeLabel = "38 MB",
+                      durationMs = 90_000L,
+                      kind = StreamKind.Preview,
+                      posterAccent = Color(0xFF6A1B9A)
+                  ),
+                  DetectedStream(
+                      id = "s-ad",
+                      title = "Sponsor Ad",
+                      url = "https://ads.example.com/spot_480p.mp4",
+                      quality = "480p",
+                      container = "MP4",
+                      sizeLabel = "2.1 MB",
+                      durationMs = 15_000L,
+                      kind = StreamKind.Ad,
+                      posterAccent = Color(0xFFEF6C00)
+                  )
+              )
+
+              val queue = listOf(
+                  QueueItem(
+                      "q-1",
+                      DetectedStream(
+                          "q-s1", "Midnight Express - Episode 2", "https://cdn.example.com/media/ep2_1080p.mp4",
+                          "1080p", "MP4", "810 MB", 2_405_000L, StreamKind.Main, Color(0xFF00695C)
+                      )
+                  ),
+                  QueueItem(
+                      "q-2",
+                      DetectedStream(
+                          "q-s2", "Midnight Express - Episode 3", "https://cdn.example.com/media/ep3_1080p.mp4",
+                          "1080p", "MP4", "795 MB", 2_390_000L, StreamKind.Main, Color(0xFFAD1457)
+                      )
+                  )
+              )
+
+              val recents = listOf(
+                  RecentSite("Big Buck Bunny", "https://peach.blender.org"),
+                  RecentSite("Sintel", "https://durian.blender.org"),
+                  RecentSite("Internet Archive Movies", "https://archive.org/details/movies"),
+                  RecentSite("Wikimedia Commons", "https://commons.wikimedia.org")
+              )
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/DetectedMediaBottomSheet.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/DetectedMediaBottomSheet.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.widthIn
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+          import androidx.compose.material.icons.filled.Cast
+          import androidx.compose.material.icons.filled.ContentCopy
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.ExperimentalMaterial3Api
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.ModalBottomSheet
+          import androidx.compose.material3.OutlinedButton
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.rememberModalBottomSheetState
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import com.nilesh.cast.ui.theme.CastColors
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun DetectedMediaBottomSheet(state: CastUiState, actions: CastActions) {
+              val clipboard = LocalClipboardManager.current
+              val copyLink: (DetectedStream) -> Unit = { stream ->
+                  clipboard.setText(AnnotatedString(stream.url))
+                  actions.onLinkCopied(stream.id)
+              }
+              val main = state.mainStream
+              val others = state.otherStreams
+
+              ModalBottomSheet(
+                  onDismissRequest = actions::onDismissSheet,
+                  sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                  containerColor = CastColors.Card,
+                  contentColor = CastColors.TextPrimary
+              ) {
+                  Column(Modifier.fillMaxWidth()) {
+                      Column(
+                          modifier = Modifier
+                              .weight(1f, fill = false)
+                              .verticalScroll(rememberScrollState())
+                              .padding(horizontal = 16.dp),
+                          verticalArrangement = Arrangement.spacedBy(12.dp)
+                      ) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Column(Modifier.weight(1f)) {
+                                  Text("Detected media", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                                  Text(
+                                      "${state.detectedStreams.size} streams found on ${hostOf(state.currentUrl)}",
+                                      color = CastColors.TextSecondary,
+                                      style = MaterialTheme.typography.bodySmall
+                                  )
+                              }
+                          }
+
+                          if (main != null) {
+                              SectionLabel("Recommended Main Video")
+                              MainStreamCard(
+                                  stream = main,
+                                  onCast = { actions.onCastStream(main.id) },
+                                  onQueue = { actions.onAddToQueue(main.id) },
+                                  onCopy = { copyLink(main) }
+                              )
+                          }
+
+                          if (others.isNotEmpty()) {
+                              SectionLabel("Other Streams / Previews", Modifier.padding(top = 4.dp))
+                              others.forEach { stream ->
+                                  OtherStreamRow(
+                                      stream = stream,
+                                      onCast = { actions.onCastStream(stream.id) },
+                                      onQueue = { actions.onAddToQueue(stream.id) },
+                                      onCopy = { copyLink(stream) }
+                                  )
+                              }
+                          }
+                          Spacer(Modifier.height(4.dp))
+                      }
+                      BannerAdPlaceholder()
+                  }
+              }
+          }
+
+          @Composable
+          private fun MainStreamCard(
+              stream: DetectedStream,
+              onCast: () -> Unit,
+              onQueue: () -> Unit,
+              onCopy: () -> Unit
+          ) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .clip(RoundedCornerShape(16.dp))
+                      .background(CastColors.CardHigh)
+                      .border(1.dp, CastColors.Cyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                      .padding(14.dp),
+                  verticalArrangement = Arrangement.spacedBy(14.dp)
+              ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                      PosterArt(stream.posterAccent, Modifier.size(width = 84.dp, height = 56.dp), iconSize = 26.dp)
+                      Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                          Text(
+                              stream.title,
+                              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                              maxLines = 2,
+                              overflow = TextOverflow.Ellipsis
+                          )
+                          QualityBadge("${stream.quality} ${stream.container}")
+                          Text(
+                              "${stream.sizeLabel} \u2022 ${formatDuration(stream.durationMs)}",
+                              color = CastColors.TextSecondary,
+                              style = MaterialTheme.typography.bodySmall
+                          )
+                      }
+                  }
+                  Button(
+                      onClick = onCast,
+                      modifier = Modifier.fillMaxWidth().height(50.dp),
+                      shape = RoundedCornerShape(14.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = CastColors.Cyan, contentColor = Color.Black)
+                  ) {
+                      Icon(Icons.Filled.Cast, contentDescription = null)
+                      Spacer(Modifier.width(8.dp))
+                      Text("Cast Now", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                  }
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                      OutlinedButton(
+                          onClick = onQueue,
+                          modifier = Modifier.weight(1f).height(46.dp),
+                          shape = RoundedCornerShape(14.dp),
+                          border = BorderStroke(1.dp, CastColors.Outline)
+                      ) {
+                          Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                          Spacer(Modifier.width(6.dp))
+                          Text("Add to Queue", maxLines = 1)
+                      }
+                      OutlinedButton(
+                          onClick = onCopy,
+                          modifier = Modifier.weight(1f).height(46.dp),
+                          shape = RoundedCornerShape(14.dp),
+                          border = BorderStroke(1.dp, CastColors.Outline)
+                      ) {
+                          Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                          Spacer(Modifier.width(6.dp))
+                          Text("Copy Link", maxLines = 1)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun OtherStreamRow(
+              stream: DetectedStream,
+              onCast: () -> Unit,
+              onQueue: () -> Unit,
+              onCopy: () -> Unit
+          ) {
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .clip(RoundedCornerShape(14.dp))
+                      .background(CastColors.CardHigh)
+                      .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  PosterArt(stream.posterAccent, Modifier.size(width = 56.dp, height = 40.dp), iconSize = 18.dp, cornerRadius = 8.dp)
+                  Column(Modifier.weight(1f).padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                      Text(
+                          stream.title,
+                          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis
+                      )
+                      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                          QualityBadge(stream.quality, color = CastColors.TextSecondary)
+                          if (stream.isAd) {
+                              QualityBadge("${formatDuration(stream.durationMs)} AD", color = CastColors.AdAmber)
+                          } else {
+                              Text(
+                                  "${formatDuration(stream.durationMs)} \u2022 ${stream.sizeLabel}",
+                                  color = CastColors.TextSecondary,
+                                  style = MaterialTheme.typography.labelSmall
+                              )
+                          }
+                      }
+                  }
+                  IconButton(onClick = onCast, modifier = Modifier.size(40.dp)) {
+                      Icon(Icons.Filled.Cast, contentDescription = "Cast now", tint = CastColors.Cyan)
+                  }
+                  IconButton(onClick = onQueue, modifier = Modifier.size(40.dp)) {
+                      Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to queue")
+                  }
+                  IconButton(onClick = onCopy, modifier = Modifier.size(40.dp)) {
+                      Icon(Icons.Filled.ContentCopy, contentDescription = "Copy link")
+                  }
+              }
+          }
+
+          @Composable
+          private fun BannerAdPlaceholder() {
+              Column(
+                  modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp, start = 16.dp, end = 16.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                  Text(
+                      "Advertisement",
+                      color = CastColors.TextSecondary,
+                      style = MaterialTheme.typography.labelSmall,
+                      textAlign = TextAlign.Center
+                  )
+                  Box(
+                      modifier = Modifier
+                          .widthIn(max = 320.dp)
+                          .fillMaxWidth()
+                          .height(50.dp)
+                          .clip(RoundedCornerShape(6.dp))
+                          .background(CastColors.Background)
+                          .border(1.dp, CastColors.AdAmber.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      Text(
+                          "320\u00D750 Adaptive Banner",
+                          color = CastColors.TextSecondary,
+                          style = MaterialTheme.typography.labelMedium
+                      )
+                  }
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/DevicePickerBottomSheet.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/DevicePickerBottomSheet.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.CheckCircle
+          import androidx.compose.material.icons.filled.LinkOff
+          import androidx.compose.material.icons.filled.PhoneAndroid
+          import androidx.compose.material.icons.filled.Refresh
+          import androidx.compose.material.icons.filled.VolumeUp
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.CircularProgressIndicator
+          import androidx.compose.material3.ExperimentalMaterial3Api
+          import androidx.compose.material3.HorizontalDivider
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.ModalBottomSheet
+          import androidx.compose.material3.OutlinedButton
+          import androidx.compose.material3.Slider
+          import androidx.compose.material3.Switch
+          import androidx.compose.material3.SwitchDefaults
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.rememberModalBottomSheetState
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import com.nilesh.cast.ui.theme.CastColors
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun DevicePickerBottomSheet(state: CastUiState, actions: CastActions) {
+              ModalBottomSheet(
+                  onDismissRequest = actions::onDismissSheet,
+                  sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                  containerColor = CastColors.Card,
+                  contentColor = CastColors.TextPrimary
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .verticalScroll(rememberScrollState())
+                          .padding(horizontal = 16.dp)
+                          .padding(bottom = 16.dp),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Column(Modifier.weight(1f)) {
+                              Text("Cast to", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                              Text(
+                                  if (state.isScanning) "Searching your network..." else "${state.devices.size} devices found",
+                                  color = CastColors.TextSecondary,
+                                  style = MaterialTheme.typography.bodySmall
+                              )
+                          }
+                          if (state.isScanning) {
+                              CircularProgressIndicator(
+                                  modifier = Modifier.size(22.dp),
+                                  strokeWidth = 2.dp,
+                                  color = CastColors.Cyan
+                              )
+                              Spacer(Modifier.width(12.dp))
+                          } else {
+                              IconButton(onClick = actions::onRescanDevices) {
+                                  Icon(Icons.Filled.Refresh, contentDescription = "Rescan devices", tint = CastColors.Cyan)
+                              }
+                          }
+                      }
+
+                      DeviceGroup.entries.forEach { group ->
+                          val items = state.devices.filter { it.protocol.group == group }
+                          if (items.isNotEmpty()) {
+                              SectionLabel(group.title, Modifier.padding(top = 6.dp))
+                              items.forEach { device ->
+                                  DeviceRow(
+                                      device = device,
+                                      connected = state.connectedDevice?.id == device.id,
+                                      onClick = { actions.onConnectDevice(device.id) }
+                                  )
+                              }
+                          }
+                      }
+
+                      PlaybackControlsCard(state, actions)
+                  }
+              }
+          }
+
+          @Composable
+          private fun DeviceRow(device: CastDevice, connected: Boolean, onClick: () -> Unit) {
+              val shape = RoundedCornerShape(14.dp)
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .clip(shape)
+                      .background(CastColors.CardHigh)
+                      .border(1.dp, if (connected) CastColors.Cyan else Color.Transparent, shape)
+                      .clickable(onClick = onClick)
+                      .padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      modifier = Modifier.size(42.dp).clip(CircleShape).background(CastColors.Background),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      Icon(
+                          imageVector = device.protocol.icon(),
+                          contentDescription = null,
+                          tint = if (connected) CastColors.Cyan else CastColors.TextSecondary
+                      )
+                  }
+                  Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                      Text(device.name, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                      Text(
+                          "${device.model} \u2022 ${device.ipAddress}",
+                          color = CastColors.TextSecondary,
+                          style = MaterialTheme.typography.bodySmall
+                      )
+                      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          QualityBadge(device.protocol.tag, color = if (connected) CastColors.Cyan else CastColors.TextSecondary)
+                      }
+                      Text(
+                          device.protocol.hint,
+                          color = CastColors.TextSecondary,
+                          style = MaterialTheme.typography.labelSmall
+                      )
+                  }
+                  if (connected) {
+                      Icon(Icons.Filled.CheckCircle, contentDescription = "Connected", tint = CastColors.Cyan)
+                  }
+              }
+          }
+
+          @Composable
+          private fun PlaybackControlsCard(state: CastUiState, actions: CastActions) {
+              val connected = state.isConnected
+              Column(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(top = 6.dp)
+                      .clip(RoundedCornerShape(16.dp))
+                      .background(CastColors.CardHigh)
+                      .padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = CastColors.TextSecondary)
+                      Spacer(Modifier.width(10.dp))
+                      Text("TV Volume", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                      Text("${(state.volume * 100).toInt()}%", color = CastColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
+                  }
+                  Slider(
+                      value = state.volume,
+                      onValueChange = actions::onVolumeChange,
+                      enabled = connected,
+                      colors = castSliderColors()
+                  )
+                  HorizontalDivider(color = CastColors.Outline)
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(Icons.Filled.PhoneAndroid, contentDescription = null, tint = CastColors.TextSecondary)
+                      Spacer(Modifier.width(10.dp))
+                      Column(Modifier.weight(1f)) {
+                          Text("Route Audio to Phone", style = MaterialTheme.typography.titleSmall)
+                          Text(
+                              "Hear sound on this phone while the TV shows video",
+                              color = CastColors.TextSecondary,
+                              style = MaterialTheme.typography.bodySmall
+                          )
+                      }
+                      Switch(
+                          checked = state.routeAudioToPhone,
+                          onCheckedChange = actions::onRouteAudioToPhone,
+                          enabled = connected,
+                          colors = SwitchDefaults.colors(
+                              checkedThumbColor = Color.Black,
+                              checkedTrackColor = CastColors.Cyan,
+                              uncheckedThumbColor = CastColors.TextSecondary,
+                              uncheckedTrackColor = CastColors.Background,
+                              uncheckedBorderColor = CastColors.Outline
+                          )
+                      )
+                  }
+                  Spacer(Modifier.height(4.dp))
+                  OutlinedButton(
+                      onClick = actions::onDisconnect,
+                      enabled = connected,
+                      modifier = Modifier.fillMaxWidth(),
+                      colors = ButtonDefaults.outlinedButtonColors(contentColor = CastColors.Danger),
+                      border = BorderStroke(1.dp, if (connected) CastColors.Danger else CastColors.Outline)
+                  ) {
+                      Icon(Icons.Filled.LinkOff, contentDescription = null)
+                      Spacer(Modifier.width(8.dp))
+                      Text("Disconnect")
+                  }
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/ExpandedRemoteSheet.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/ExpandedRemoteSheet.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import android.content.Context
+          import android.net.Uri
+          import android.provider.OpenableColumns
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.gestures.detectDragGestures
+          import androidx.compose.foundation.gestures.detectTapGestures
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.aspectRatio
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.systemBarsPadding
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+          import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+          import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+          import androidx.compose.material.icons.filled.Cast
+          import androidx.compose.material.icons.filled.CastConnected
+          import androidx.compose.material.icons.filled.Delete
+          import androidx.compose.material.icons.filled.FileOpen
+          import androidx.compose.material.icons.filled.Forward30
+          import androidx.compose.material.icons.filled.Gamepad
+          import androidx.compose.material.icons.filled.Home
+          import androidx.compose.material.icons.filled.KeyboardArrowDown
+          import androidx.compose.material.icons.filled.KeyboardArrowUp
+          import androidx.compose.material.icons.filled.Lock
+          import androidx.compose.material.icons.filled.Pause
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.Subtitles
+          import androidx.compose.material.icons.filled.TouchApp
+          import androidx.compose.material.icons.filled.VolumeDown
+          import androidx.compose.material.icons.filled.VolumeUp
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.FilledIconButton
+          import androidx.compose.material3.FloatingActionButton
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.IconButtonDefaults
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.OutlinedButton
+          import androidx.compose.material3.Slider
+          import androidx.compose.material3.Surface
+          import androidx.compose.material3.Tab
+          import androidx.compose.material3.TabRow
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.rememberUpdatedState
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.window.Dialog
+          import androidx.compose.ui.window.DialogProperties
+          import com.nilesh.cast.ui.theme.CastColors
+          import kotlin.math.abs
+
+          @Composable
+          fun ExpandedRemoteSheet(state: CastUiState, actions: CastActions) {
+              val np = state.nowPlaying ?: return
+              val deviceName = state.connectedDevice?.name.orEmpty()
+
+              Dialog(
+                  onDismissRequest = actions::onDismissSheet,
+                  properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+              ) {
+                  Surface(modifier = Modifier.fillMaxSize(), color = CastColors.Background) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxSize()
+                              .systemBarsPadding()
+                              .verticalScroll(rememberScrollState())
+                              .padding(horizontal = 20.dp, vertical = 8.dp),
+                          verticalArrangement = Arrangement.spacedBy(18.dp)
+                      ) {
+                          RemoteHeader(deviceName, state.isConnected, actions)
+
+                          Box(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .aspectRatio(16f / 9f)
+                                  .clip(RoundedCornerShape(20.dp))
+                                  .background(
+                                      Brush.linearGradient(
+                                          listOf(np.stream.posterAccent, np.stream.posterAccent.copy(alpha = 0.4f), CastColors.Card)
+                                      )
+                                  ),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              PosterArt(Color.Transparent, Modifier.fillMaxSize(), iconSize = 64.dp, cornerRadius = 20.dp)
+                              QualityBadge(
+                                  "${np.stream.quality} ${np.stream.container}",
+                                  modifier = Modifier.align(Alignment.BottomStart).padding(12.dp)
+                              )
+                          }
+
+                          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                              Text(
+                                  np.stream.title,
+                                  style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                  maxLines = 2,
+                                  overflow = TextOverflow.Ellipsis
+                              )
+                              Text(
+                                  "${np.stream.sizeLabel} \u2022 ${np.stream.quality} ${np.stream.container}",
+                                  color = CastColors.TextSecondary,
+                                  style = MaterialTheme.typography.bodySmall
+                              )
+                          }
+
+                          Timeline(state, actions)
+                          TransportControls(state, actions)
+
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Filled.VolumeDown, contentDescription = null, tint = CastColors.TextSecondary)
+                              Slider(
+                                  value = state.volume,
+                                  onValueChange = actions::onVolumeChange,
+                                  colors = castSliderColors(),
+                                  modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                              )
+                              Icon(Icons.Filled.VolumeUp, contentDescription = "TV volume", tint = CastColors.TextSecondary)
+                          }
+
+                          UtilityTabs(state, actions)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun RemoteHeader(deviceName: String, connected: Boolean, actions: CastActions) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                  IconButton(onClick = actions::onDismissSheet) {
+                      Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse", modifier = Modifier.size(30.dp))
+                  }
+                  Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                      SectionLabel("Playing on")
+                      Text(
+                          deviceName,
+                          color = CastColors.Cyan,
+                          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis
+                      )
+                  }
+                  IconButton(onClick = actions::onShowDevicePicker) {
+                      Icon(
+                          imageVector = if (connected) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                          contentDescription = "Change device",
+                          tint = CastColors.Cyan
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun Timeline(state: CastUiState, actions: CastActions) {
+              val np = state.nowPlaying ?: return
+              var drag by remember { mutableStateOf<Float?>(null) }
+              val shown = drag ?: np.progress
+
+              Column {
+                  Slider(
+                      value = shown,
+                      onValueChange = { drag = it },
+                      onValueChangeFinished = {
+                          drag?.let { actions.onSeekToFraction(it) }
+                          drag = null
+                      },
+                      enabled = state.canSeek,
+                      colors = castSliderColors()
+                  )
+                  Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                      Text(
+                          formatDuration((shown * np.stream.durationMs).toLong()),
+                          color = CastColors.TextSecondary,
+                          style = MaterialTheme.typography.labelMedium
+                      )
+                      Text(
+                          formatDuration(np.stream.durationMs),
+                          color = CastColors.TextSecondary,
+                          style = MaterialTheme.typography.labelMedium
+                      )
+                  }
+                  if (!state.canSeek) {
+                      Row(
+                          modifier = Modifier.padding(top = 8.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(6.dp)
+                      ) {
+                          Icon(Icons.Filled.Lock, contentDescription = null, tint = CastColors.TextSecondary, modifier = Modifier.size(14.dp))
+                          Text(
+                              "Seeking isn't supported by ${state.connectedDevice?.name.orEmpty()} (${state.connectedDevice?.protocol?.tag.orEmpty()})",
+                              color = CastColors.TextSecondary,
+                              style = MaterialTheme.typography.labelSmall
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun TransportControls(state: CastUiState, actions: CastActions) {
+              val playing = state.nowPlaying?.isPlaying == true
+              Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  IconButton(
+                      onClick = { actions.onSeekBy(-15_000L) },
+                      enabled = state.canSeek,
+                      modifier = Modifier.size(56.dp)
+                  ) {
+                      SeekBackIcon(seconds = 15, size = 36.dp)
+                  }
+                  FloatingActionButton(
+                      onClick = actions::onTogglePlayPause,
+                      containerColor = CastColors.Cyan,
+                      contentColor = Color.Black,
+                      shape = CircleShape,
+                      modifier = Modifier.size(72.dp)
+                  ) {
+                      Icon(
+                          imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                          contentDescription = if (playing) "Pause" else "Play",
+                          modifier = Modifier.size(38.dp)
+                      )
+                  }
+                  IconButton(
+                      onClick = { actions.onSeekBy(30_000L) },
+                      enabled = state.canSeek,
+                      modifier = Modifier.size(56.dp)
+                  ) {
+                      Icon(Icons.Filled.Forward30, contentDescription = "Forward 30 seconds", modifier = Modifier.size(36.dp))
+                  }
+              }
+          }
+
+          private fun RemoteTab.icon(): ImageVector = when (this) {
+              RemoteTab.SubtitleSync -> Icons.Filled.Subtitles
+              RemoteTab.DPad -> Icons.Filled.Gamepad
+              RemoteTab.Queue -> Icons.AutoMirrored.Filled.PlaylistPlay
+          }
+
+          @Composable
+          private fun UtilityTabs(state: CastUiState, actions: CastActions) {
+              Column {
+                  TabRow(
+                      selectedTabIndex = state.remoteTab.ordinal,
+                      containerColor = Color.Transparent,
+                      contentColor = CastColors.Cyan
+                  ) {
+                      RemoteTab.entries.forEach { tab ->
+                          Tab(
+                              selected = tab == state.remoteTab,
+                              onClick = { actions.onSelectRemoteTab(tab) },
+                              selectedContentColor = CastColors.Cyan,
+                              unselectedContentColor = CastColors.TextSecondary,
+                              icon = { Icon(tab.icon(), contentDescription = null) },
+                              text = {
+                                  Text(
+                                      if (tab == RemoteTab.Queue) "Queue (${state.queue.size})" else tab.title,
+                                      maxLines = 1,
+                                      style = MaterialTheme.typography.labelMedium
+                                  )
+                              }
+                          )
+                      }
+                  }
+                  Box(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 24.dp)) {
+                      when (state.remoteTab) {
+                          RemoteTab.SubtitleSync -> SubtitleSyncTab(state, actions)
+                          RemoteTab.DPad -> DPadTab(state, actions)
+                          RemoteTab.Queue -> QueueTab(state, actions)
+                      }
+                  }
+              }
+          }
+
+          // ------------------------------------------------------------ Subtitle sync
+
+          private fun Context.displayNameOf(uri: Uri): String =
+              contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                  if (cursor.moveToFirst()) cursor.getString(0) else null
+              } ?: uri.lastPathSegment ?: "subtitles.srt"
+
+          @Composable
+          private fun SubtitleSyncTab(state: CastUiState, actions: CastActions) {
+              val context = LocalContext.current
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+                  if (uri != null) actions.onSubtitleSelected(context.displayNameOf(uri))
+              }
+
+              Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .clip(RoundedCornerShape(16.dp))
+                          .background(CastColors.CardHigh)
+                          .padding(16.dp),
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      SectionLabel("Subtitle delay")
+                      Text(
+                          formatDelay(state.subtitleDelayMs),
+                          color = if (state.subtitleDelayMs == 0) CastColors.TextPrimary else CastColors.Cyan,
+                          style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+                      )
+                      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          OutlinedButton(
+                              onClick = { actions.onSubtitleDelay(-500) },
+                              modifier = Modifier.weight(1f).height(48.dp),
+                              border = BorderStroke(1.dp, CastColors.Outline)
+                          ) { Text("-0.5s") }
+                          OutlinedButton(
+                              onClick = { actions.onSubtitleDelay(500) },
+                              modifier = Modifier.weight(1f).height(48.dp),
+                              border = BorderStroke(1.dp, CastColors.Outline)
+                          ) { Text("+0.5s") }
+                      }
+                      TextButton(onClick = actions::onResetSubtitleDelay, enabled = state.subtitleDelayMs != 0) {
+                          Text("Reset", color = if (state.subtitleDelayMs != 0) CastColors.Cyan else CastColors.TextSecondary)
+                      }
+                  }
+                  Button(
+                      onClick = { picker.launch(arrayOf("*/*")) },
+                      modifier = Modifier.fillMaxWidth().height(50.dp),
+                      shape = RoundedCornerShape(14.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = CastColors.Cyan, contentColor = Color.Black)
+                  ) {
+                      Icon(Icons.Filled.FileOpen, contentDescription = null)
+                      Spacer(Modifier.width(8.dp))
+                      Text("Pick .srt file")
+                  }
+                  Text(
+                      text = state.subtitleFileName?.let { "Loaded: $it" } ?: "No subtitle file selected",
+                      color = CastColors.TextSecondary,
+                      style = MaterialTheme.typography.bodySmall,
+                      modifier = Modifier.fillMaxWidth(),
+                      textAlign = TextAlign.Center
+                  )
+              }
+          }
+
+          // ------------------------------------------------------- D-pad / trackpad
+
+          @Composable
+          private fun DPadTab(state: CastUiState, actions: CastActions) {
+              val supported = state.connectedDevice?.protocol?.supportsRemoteInput == true
+              if (!supported) {
+                  InfoBanner("D-pad control isn't available over DLNA. Use a Chromecast, Roku, WebOS or Tizen device.")
+                  return
+              }
+              Column(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  Trackpad(onKey = actions::onDpad)
+                  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                      DPadButton(Icons.Filled.KeyboardArrowUp, "Up") { actions.onDpad(DpadKey.Up) }
+                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                          DPadButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Left") { actions.onDpad(DpadKey.Left) }
+                          FilledIconButton(
+                              onClick = { actions.onDpad(DpadKey.Ok) },
+                              modifier = Modifier.size(64.dp),
+                              colors = IconButtonDefaults.filledIconButtonColors(
+                                  containerColor = CastColors.Cyan,
+                                  contentColor = Color.Black
+                              )
+                          ) {
+                              Text("OK", fontWeight = FontWeight.Bold)
+                          }
+                          DPadButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Right") { actions.onDpad(DpadKey.Right) }
+                      }
+                      DPadButton(Icons.Filled.KeyboardArrowDown, "Down") { actions.onDpad(DpadKey.Down) }
+                  }
+                  Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                      OutlinedButton(
+                          onClick = { actions.onDpad(DpadKey.Back) },
+                          border = BorderStroke(1.dp, CastColors.Outline)
+                      ) {
+                          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                          Spacer(Modifier.width(6.dp))
+                          Text("Back")
+                      }
+                      OutlinedButton(
+                          onClick = { actions.onDpad(DpadKey.Home) },
+                          border = BorderStroke(1.dp, CastColors.Outline)
+                      ) {
+                          Icon(Icons.Filled.Home, contentDescription = null)
+                          Spacer(Modifier.width(6.dp))
+                          Text("Home")
+                      }
+                  }
+                  Text(
+                      text = state.lastDpadKey?.let { "Sent: ${it.label}" } ?: "Swipe the pad or use the buttons",
+                      color = CastColors.TextSecondary,
+                      style = MaterialTheme.typography.labelMedium
+                  )
+              }
+          }
+
+          @Composable
+          private fun DPadButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+              FilledIconButton(
+                  onClick = onClick,
+                  modifier = Modifier.size(56.dp),
+                  colors = IconButtonDefaults.filledIconButtonColors(
+                      containerColor = CastColors.CardHigh,
+                      contentColor = CastColors.TextPrimary
+                  )
+              ) {
+                  Icon(icon, contentDescription = description, modifier = Modifier.size(30.dp))
+              }
+          }
+
+          private fun swipeKey(total: Offset): DpadKey? {
+              val threshold = 40f
+              return when {
+                  abs(total.x) < threshold && abs(total.y) < threshold -> null
+                  abs(total.x) > abs(total.y) -> if (total.x > 0) DpadKey.Right else DpadKey.Left
+                  else -> if (total.y > 0) DpadKey.Down else DpadKey.Up
+              }
+          }
+
+          @Composable
+          private fun Trackpad(onKey: (DpadKey) -> Unit) {
+              val currentOnKey by rememberUpdatedState(onKey)
+              Box(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .height(180.dp)
+                      .clip(RoundedCornerShape(20.dp))
+                      .background(CastColors.CardHigh)
+                      .border(1.dp, CastColors.Outline, RoundedCornerShape(20.dp))
+                      .pointerInput(Unit) {
+                          detectTapGestures(onTap = { currentOnKey(DpadKey.Ok) })
+                      }
+                      .pointerInput(Unit) {
+                          var total = Offset.Zero
+                          detectDragGestures(
+                              onDragStart = { total = Offset.Zero },
+                              onDragEnd = { swipeKey(total)?.let { currentOnKey(it) } },
+                              onDragCancel = { total = Offset.Zero }
+                          ) { change, dragAmount ->
+                              change.consume()
+                              total += dragAmount
+                          }
+                      },
+                  contentAlignment = Alignment.Center
+              ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Icon(Icons.Filled.TouchApp, contentDescription = null, tint = CastColors.Cyan, modifier = Modifier.size(36.dp))
+                      Text("Swipe to move \u2022 Tap to select", color = CastColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                  }
+              }
+          }
+
+          // ------------------------------------------------------------------- Queue
+
+          @Composable
+          private fun QueueTab(state: CastUiState, actions: CastActions) {
+              if (state.queue.isEmpty()) {
+                  InfoBanner("The queue is empty. Add streams from the Detected Media sheet.")
+                  return
+              }
+              Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  state.queue.forEachIndexed { index, item ->
+                      Row(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .clip(RoundedCornerShape(14.dp))
+                              .background(CastColors.CardHigh)
+                              .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Text(
+                              "${index + 1}",
+                              color = CastColors.Cyan,
+                              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                              modifier = Modifier.width(24.dp)
+                          )
+                          Column(Modifier.weight(1f)) {
+                              Text(
+                                  item.stream.title,
+                                  style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                  maxLines = 1,
+                                  overflow = TextOverflow.Ellipsis
+                              )
+                              Text(
+                                  "${item.stream.quality} \u2022 ${formatDuration(item.stream.durationMs)}",
+                                  color = CastColors.TextSecondary,
+                                  style = MaterialTheme.typography.labelSmall
+                              )
+                          }
+                          IconButton(onClick = { actions.onPlayQueueItem(item.queueId) }) {
+                              Icon(Icons.Filled.PlayArrow, contentDescription = "Play now", tint = CastColors.Cyan)
+                          }
+                          IconButton(onClick = { actions.onRemoveQueueItem(item.queueId) }) {
+                              Icon(Icons.Filled.Delete, contentDescription = "Remove from queue", tint = CastColors.TextSecondary)
+                          }
+                      }
+                  }
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/MainBrowserScreen.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/MainBrowserScreen.kt' <<'KTEOF'
+          package com.nilesh.cast.ui
+
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.core.FastOutSlowInEasing
+          import androidx.compose.animation.core.RepeatMode
+          import androidx.compose.animation.core.animateFloat
+          import androidx.compose.animation.core.infiniteRepeatable
+          import androidx.compose.animation.core.rememberInfiniteTransition
+          import androidx.compose.animation.core.tween
+          import androidx.compose.animation.expandVertically
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.animation.shrinkVertically
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.PaddingValues
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.WindowInsets
+          import androidx.compose.foundation.layout.aspectRatio
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.ime
+          import androidx.compose.foundation.layout.navigationBars
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.statusBarsPadding
+          import androidx.compose.foundation.layout.union
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.layout.windowInsetsPadding
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.foundation.text.KeyboardActions
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
+          import androidx.compose.material.icons.automirrored.filled.ArrowForward
+          import androidx.compose.material.icons.filled.Bookmarks
+          import androidx.compose.material.icons.filled.Campaign
+          import androidx.compose.material.icons.filled.Cast
+          import androidx.compose.material.icons.filled.CastConnected
+          import androidx.compose.material.icons.filled.Home
+          import androidx.compose.material.icons.filled.LiveTv
+          import androidx.compose.material.icons.filled.MoreVert
+          import androidx.compose.material.icons.filled.Pause
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.RestartAlt
+          import androidx.compose.material.icons.filled.Search
+          import androidx.compose.material.icons.filled.Shield
+          import androidx.compose.material.icons.filled.SmartDisplay
+          import androidx.compose.material.icons.filled.VideoLibrary
+          import androidx.compose.material3.Card
+          import androidx.compose.material3.CardDefaults
+          import androidx.compose.material3.DropdownMenu
+          import androidx.compose.material3.DropdownMenuItem
+          import androidx.compose.material3.FilledIconButton
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.IconButtonDefaults
+          import androidx.compose.material3.LinearProgressIndicator
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Scaffold
+          import androidx.compose.material3.Snackbar
+          import androidx.compose.material3.SnackbarHost
+          import androidx.compose.material3.SnackbarHostState
+          import androidx.compose.material3.Surface
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.graphics.graphicsLayer
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.input.ImeAction
+          import androidx.compose.ui.text.input.KeyboardType
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.lifecycle.compose.collectAsStateWithLifecycle
+          import androidx.lifecycle.viewmodel.compose.viewModel
+          import com.nilesh.cast.ui.theme.CastColors
+
+          @Composable
+          fun MainBrowserScreen(viewModel: CastViewModel = viewModel()) {
+              val state by viewModel.uiState.collectAsStateWithLifecycle()
+              MainBrowserContent(state = state, actions = viewModel)
+          }
+
+          @Composable
+          fun MainBrowserContent(state: CastUiState, actions: CastActions) {
+              val snackbarHostState = remember { SnackbarHostState() }
+
+              LaunchedEffect(state.message) {
+                  state.message?.let { text ->
+                      snackbarHostState.showSnackbar(text)
+                      actions.onMessageShown()
+                  }
+              }
+
+              Scaffold(
+                  containerColor = CastColors.Background,
+                  contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                  topBar = { CastTopBar(state, actions) },
+                  bottomBar = {
+                      Surface(color = CastColors.Card) {
+                          Column(
+                              Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                          ) {
+                              AnimatedVisibility(
+                                  visible = state.isCasting,
+                                  enter = expandVertically() + fadeIn(),
+                                  exit = shrinkVertically() + fadeOut()
+                              ) {
+                                  MiniController(state, actions)
+                              }
+                              BrowserOmnibox(state, actions)
+                          }
+                      }
+                  },
+                  snackbarHost = {
+                      SnackbarHost(snackbarHostState) { data ->
+                          Snackbar(
+                              snackbarData = data,
+                              containerColor = CastColors.CardHigh,
+                              contentColor = CastColors.TextPrimary,
+                              actionColor = CastColors.Cyan
+                          )
+                      }
+                  }
+              ) { padding ->
+                  Box(Modifier.padding(padding).fillMaxSize()) {
+                      if (state.hasPage) WebPagePreview(state, actions) else HomeHub(state, actions)
+                  }
+              }
+
+              when (state.activeSheet) {
+                  ActiveSheet.DevicePicker -> DevicePickerBottomSheet(state, actions)
+                  ActiveSheet.DetectedMedia -> DetectedMediaBottomSheet(state, actions)
+                  ActiveSheet.ExpandedRemote -> ExpandedRemoteSheet(state, actions)
+                  ActiveSheet.None -> Unit
+              }
+          }
+
+          // ------------------------------------------------------------------ Top bar
+
+          @Composable
+          private fun CastTopBar(state: CastUiState, actions: CastActions) {
+              var menuOpen by remember { mutableStateOf(false) }
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(CastColors.Background)
+                      .statusBarsPadding()
+                      .padding(horizontal = 12.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  ConnectionPill(
+                      label = state.statusLabel,
+                      connected = state.isConnected,
+                      onClick = actions::onShowDevicePicker,
+                      modifier = Modifier.weight(1f, fill = false)
+                  )
+                  Spacer(Modifier.weight(1f))
+                  AdBlockBadge(count = state.adsBlocked)
+                  Box {
+                      IconButton(onClick = { menuOpen = true }) {
+                          Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                      }
+                      DropdownMenu(
+                          expanded = menuOpen,
+                          onDismissRequest = { menuOpen = false },
+                          modifier = Modifier.background(CastColors.CardHigh)
+                      ) {
+                          DropdownMenuItem(
+                              text = { Text("Home") },
+                              leadingIcon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                              onClick = {
+                                  menuOpen = false
+                                  actions.onGoHome()
+                              }
+                          )
+                          DropdownMenuItem(
+                              text = { Text("Rescan devices") },
+                              leadingIcon = { Icon(Icons.Filled.Cast, contentDescription = null) },
+                              onClick = {
+                                  menuOpen = false
+                                  actions.onRescanDevices()
+                                  actions.onShowDevicePicker()
+                              }
+                          )
+                          DropdownMenuItem(
+                              text = { Text("Reset ad-block counter") },
+                              leadingIcon = { Icon(Icons.Filled.RestartAlt, contentDescription = null) },
+                              onClick = {
+                                  menuOpen = false
+                                  actions.onResetAdCounter()
+                              }
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun ConnectionPill(
+              label: String,
+              connected: Boolean,
+              onClick: () -> Unit,
+              modifier: Modifier = Modifier
+          ) {
+              val accent = if (connected) CastColors.Cyan else CastColors.TextSecondary
+              Row(
+                  modifier = modifier
+                      .clip(RoundedCornerShape(50))
+                      .background(if (connected) CastColors.Cyan.copy(alpha = 0.14f) else CastColors.CardHigh)
+                      .border(1.dp, if (connected) CastColors.Cyan else CastColors.Outline, RoundedCornerShape(50))
+                      .clickable(onClick = onClick)
+                      .padding(horizontal = 14.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Icon(
+                      imageVector = if (connected) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                      contentDescription = null,
+                      tint = accent,
+                      modifier = Modifier.size(18.dp)
+                  )
+                  Spacer(Modifier.width(8.dp))
+                  Text(
+                      text = label,
+                      color = if (connected) CastColors.Cyan else CastColors.TextPrimary,
+                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                  )
+              }
+          }
+
+          @Composable
+          private fun AdBlockBadge(count: Int) {
+              Row(
+                  modifier = Modifier
+                      .clip(RoundedCornerShape(50))
+                      .background(CastColors.CardHigh)
+                      .padding(horizontal = 10.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Icon(Icons.Filled.Shield, contentDescription = "Ads blocked", tint = CastColors.Cyan, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(6.dp))
+                  Text(
+                      text = count.toString(),
+                      color = CastColors.TextPrimary,
+                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                  )
+              }
+          }
+
+          // ----------------------------------------------------------------- Home hub
+
+          @Composable
+          private fun HomeHub(state: CastUiState, actions: CastActions) {
+              LazyColumn(
+                  modifier = Modifier.fillMaxSize(),
+                  contentPadding = PaddingValues(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  item {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Box(
+                              modifier = Modifier.size(44.dp).clip(CircleShape).background(CastColors.Cyan),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              Icon(Icons.Filled.Cast, contentDescription = null, tint = Color.Black)
+                          }
+                          Spacer(Modifier.width(12.dp))
+                          Column {
+                              Text("Nilesh Cast", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                              Text("Browse, detect and cast. Free.", color = CastColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                          }
+                      }
+                  }
+                  item {
+                      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                          SectionLabel("Quick Access")
+                          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                              QuickAccess.entries.forEach { item ->
+                                  QuickAccessCard(
+                                      item = item,
+                                      onClick = { actions.onQuickAccess(item) },
+                                      modifier = Modifier.weight(1f)
+                                  )
+                              }
+                          }
+                      }
+                  }
+                  item {
+                      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                          SectionLabel("Recently Visited")
+                          Card(
+                              shape = RoundedCornerShape(16.dp),
+                              colors = CardDefaults.cardColors(containerColor = CastColors.Card)
+                          ) {
+                              Column {
+                                  state.recents.forEach { site ->
+                                      RecentRow(site) { actions.onOpenUrl(site.url) }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  item { NativeAdCard() }
+              }
+          }
+
+          private fun QuickAccess.icon(): ImageVector = when (this) {
+              QuickAccess.LocalMedia -> Icons.Filled.VideoLibrary
+              QuickAccess.IptvM3u -> Icons.Filled.LiveTv
+              QuickAccess.Bookmarks -> Icons.Filled.Bookmarks
+          }
+
+          @Composable
+          private fun QuickAccessCard(item: QuickAccess, onClick: () -> Unit, modifier: Modifier = Modifier) {
+              Card(
+                  onClick = onClick,
+                  modifier = modifier,
+                  shape = RoundedCornerShape(16.dp),
+                  colors = CardDefaults.cardColors(containerColor = CastColors.Card)
+              ) {
+                  Column(
+                      modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp, horizontal = 8.dp),
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                      Box(
+                          modifier = Modifier.size(44.dp).clip(CircleShape).background(CastColors.Cyan.copy(alpha = 0.14f)),
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Icon(item.icon(), contentDescription = null, tint = CastColors.Cyan)
+                      }
+                      Text(item.title, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
+                      Text(item.subtitle, color = CastColors.TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                  }
+              }
+          }
+
+          @Composable
+          private fun RecentRow(site: RecentSite, onClick: () -> Unit) {
+              Row(
+                  modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      modifier = Modifier.size(38.dp).clip(CircleShape).background(CastColors.CardHigh),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      Text(
+                          text = site.title.first().uppercase(),
+                          color = CastColors.Cyan,
+                          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                      )
+                  }
+                  Spacer(Modifier.width(12.dp))
+                  Column(Modifier.weight(1f)) {
+                      Text(site.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      Text(hostOf(site.url), color = CastColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                  }
+              }
+          }
+
+          @Composable
+          private fun NativeAdCard() {
+              Card(
+                  shape = RoundedCornerShape(16.dp),
+                  colors = CardDefaults.cardColors(containerColor = CastColors.Card),
+                  modifier = Modifier.border(1.dp, CastColors.AdAmber.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+              ) {
+                  Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          QualityBadge("AD", color = CastColors.AdAmber)
+                          Spacer(Modifier.width(8.dp))
+                          Text("Sponsored", color = CastColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                      }
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Box(
+                              modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(CastColors.CardHigh),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              Icon(Icons.Filled.Campaign, contentDescription = null, tint = CastColors.AdAmber)
+                          }
+                          Spacer(Modifier.width(12.dp))
+                          Column(Modifier.weight(1f)) {
+                              Text("Native ad placeholder", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                              Text(
+                                  "A single sponsored card appears here. Ads never play over your casting.",
+                                  color = CastColors.TextSecondary,
+                                  style = MaterialTheme.typography.bodySmall
+                              )
+                          }
+                      }
+                      TextButton(onClick = {}, modifier = Modifier.align(Alignment.End)) {
+                          Text("Learn more", color = CastColors.Cyan)
+                      }
+                  }
+              }
+          }
+
+          // ------------------------------------------------------- Page (mock browser)
+
+          @Composable
+          private fun WebPagePreview(state: CastUiState, actions: CastActions) {
+              Column(Modifier.fillMaxSize()) {
+                  if (state.isLoading) {
+                      LinearProgressIndicator(
+                          modifier = Modifier.fillMaxWidth().height(2.dp),
+                          color = CastColors.Cyan,
+                          trackColor = Color.Transparent
+                      )
+                  } else {
+                      Spacer(Modifier.height(2.dp))
+                  }
+                  Column(
+                      modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                      verticalArrangement = Arrangement.spacedBy(14.dp)
+                  ) {
+                      Text(hostOf(state.currentUrl), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                      Text(state.currentUrl, color = CastColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      Box(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .aspectRatio(16f / 9f)
+                              .clip(RoundedCornerShape(16.dp))
+                              .background(Brush.linearGradient(listOf(Color(0xFF1565C0), CastColors.CardHigh)))
+                              .clickable(onClick = actions::onShowDetectedMedia),
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Box(
+                              modifier = Modifier.size(64.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              Icon(Icons.Filled.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(40.dp))
+                          }
+                      }
+                      listOf(1f, 0.92f, 0.97f, 0.6f).forEach { fraction ->
+                          Box(
+                              Modifier
+                                  .fillMaxWidth(fraction)
+                                  .height(12.dp)
+                                  .clip(RoundedCornerShape(6.dp))
+                                  .background(CastColors.CardHigh)
+                          )
+                      }
+                  }
+              }
+          }
+
+          // ------------------------------------------------------------ Bottom: omnibox
+
+          @Composable
+          private fun BrowserOmnibox(state: CastUiState, actions: CastActions) {
+              Row(
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                  IconButton(onClick = actions::onBack, enabled = state.canGoBack, modifier = Modifier.size(38.dp)) {
+                      Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                  }
+                  IconButton(onClick = actions::onForward, enabled = state.canGoForward, modifier = Modifier.size(38.dp)) {
+                      Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+                  }
+                  OmniboxField(
+                      value = state.urlInput,
+                      onValueChange = actions::onUrlInputChange,
+                      onGo = actions::onSubmitUrl,
+                      modifier = Modifier.weight(1f)
+                  )
+                  if (state.hasPage && state.detectedStreams.isNotEmpty()) {
+                      DetectedMediaPill(count = state.detectedStreams.size, onClick = actions::onShowDetectedMedia)
+                  }
+                  IconButton(onClick = actions::onShowDevicePicker, modifier = Modifier.size(38.dp)) {
+                      Icon(
+                          imageVector = if (state.isConnected) Icons.Filled.CastConnected else Icons.Filled.Cast,
+                          contentDescription = "Cast",
+                          tint = if (state.isConnected) CastColors.Cyan else CastColors.TextPrimary
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun OmniboxField(
+              value: String,
+              onValueChange: (String) -> Unit,
+              onGo: () -> Unit,
+              modifier: Modifier = Modifier
+          ) {
+              BasicTextField(
+                  value = value,
+                  onValueChange = onValueChange,
+                  singleLine = true,
+                  textStyle = MaterialTheme.typography.bodyMedium.copy(color = CastColors.TextPrimary),
+                  cursorBrush = SolidColor(CastColors.Cyan),
+                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                  keyboardActions = KeyboardActions(onGo = { onGo() }),
+                  modifier = modifier,
+                  decorationBox = { inner ->
+                      Row(
+                          modifier = Modifier
+                              .height(40.dp)
+                              .clip(RoundedCornerShape(20.dp))
+                              .background(CastColors.CardHigh)
+                              .padding(horizontal = 12.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Icon(Icons.Filled.Search, contentDescription = null, tint = CastColors.TextSecondary, modifier = Modifier.size(18.dp))
+                          Spacer(Modifier.width(8.dp))
+                          Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                              if (value.isEmpty()) {
+                                  Text(
+                                      "Search or enter URL",
+                                      color = CastColors.TextSecondary,
+                                      style = MaterialTheme.typography.bodyMedium,
+                                      maxLines = 1
+                                  )
+                              }
+                              inner()
+                          }
+                      }
+                  }
+              )
+          }
+
+          @Composable
+          private fun DetectedMediaPill(count: Int, onClick: () -> Unit) {
+              val transition = rememberInfiniteTransition(label = "detected-pulse")
+              val pulse by transition.animateFloat(
+                  initialValue = 0.35f,
+                  targetValue = 1f,
+                  animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                  label = "detected-pulse-alpha"
+              )
+              Row(
+                  modifier = Modifier
+                      .height(36.dp)
+                      .clip(RoundedCornerShape(18.dp))
+                      .background(CastColors.Cyan.copy(alpha = 0.16f))
+                      .border(1.dp, CastColors.Cyan.copy(alpha = pulse), RoundedCornerShape(18.dp))
+                      .clickable(onClick = onClick)
+                      .padding(horizontal = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      Modifier
+                          .size(8.dp)
+                          .graphicsLayer {
+                              scaleX = 0.8f + 0.5f * pulse
+                              scaleY = 0.8f + 0.5f * pulse
+                          }
+                          .background(CastColors.Cyan, CircleShape)
+                  )
+                  Spacer(Modifier.width(6.dp))
+                  Icon(Icons.Filled.SmartDisplay, contentDescription = "Detected media", tint = CastColors.Cyan, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(4.dp))
+                  Text(
+                      text = count.toString(),
+                      color = CastColors.Cyan,
+                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                  )
+              }
+          }
+
+          // ----------------------------------------------------------- Mini controller
+
+          @Composable
+          private fun MiniController(state: CastUiState, actions: CastActions) {
+              val np = state.nowPlaying ?: return
+              Column(Modifier.fillMaxWidth().background(CastColors.CardHigh)) {
+                  LinearProgressIndicator(
+                      progress = { np.progress },
+                      modifier = Modifier.fillMaxWidth().height(2.dp),
+                      color = CastColors.Cyan,
+                      trackColor = CastColors.Outline
+                  )
+                  Row(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .clickable(onClick = actions::onShowRemote)
+                          .padding(horizontal = 12.dp, vertical = 8.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      PosterArt(np.stream.posterAccent, Modifier.size(44.dp), iconSize = 22.dp)
+                      Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                          Text(
+                              np.stream.title,
+                              style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis
+                          )
+                          Text(
+                              "Casting to ${state.connectedDevice?.name.orEmpty()}",
+                              color = CastColors.Cyan,
+                              style = MaterialTheme.typography.labelSmall,
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis
+                          )
+                      }
+                      IconButton(onClick = { actions.onSeekBy(-15_000L) }, enabled = state.canSeek) {
+                          SeekBackIcon(seconds = 15, size = 26.dp)
+                      }
+                      FilledIconButton(
+                          onClick = actions::onTogglePlayPause,
+                          colors = IconButtonDefaults.filledIconButtonColors(
+                              containerColor = CastColors.Cyan,
+                              contentColor = Color.Black
+                          )
+                      ) {
+                          Icon(
+                              imageVector = if (np.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                              contentDescription = if (np.isPlaying) "Pause" else "Play"
+                          )
+                      }
+                  }
+              }
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'app/src/main/java/com/nilesh/cast/ui/theme/Theme.kt')"
+          cat > 'app/src/main/java/com/nilesh/cast/ui/theme/Theme.kt' <<'KTEOF'
+          package com.nilesh.cast.ui.theme
+
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Typography
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.graphics.Color
+
+          object CastColors {
+              val Background = Color(0xFF121212)
+              val Card = Color(0xFF1E1E24)
+              val CardHigh = Color(0xFF2A2A33)
+              val Cyan = Color(0xFF00E5FF)
+              val TextPrimary = Color(0xFFEDEDF2)
+              val TextSecondary = Color(0xFF9A9AA6)
+              val Outline = Color(0xFF3A3A44)
+              val Danger = Color(0xFFFF5C6C)
+              val AdAmber = Color(0xFFFFB74D)
+          }
+
+          private val CastDarkColorScheme = darkColorScheme(
+              primary = CastColors.Cyan,
+              onPrimary = Color(0xFF00252B),
+              primaryContainer = Color(0xFF004F5A),
+              onPrimaryContainer = CastColors.Cyan,
+              secondary = CastColors.Cyan,
+              onSecondary = Color(0xFF00252B),
+              secondaryContainer = CastColors.CardHigh,
+              onSecondaryContainer = CastColors.TextPrimary,
+              tertiary = CastColors.AdAmber,
+              background = CastColors.Background,
+              onBackground = CastColors.TextPrimary,
+              surface = CastColors.Background,
+              onSurface = CastColors.TextPrimary,
+              surfaceVariant = CastColors.Card,
+              onSurfaceVariant = CastColors.TextSecondary,
+              surfaceTint = Color.Transparent,
+              surfaceContainerLowest = CastColors.Background,
+              surfaceContainerLow = CastColors.Card,
+              surfaceContainer = CastColors.Card,
+              surfaceContainerHigh = CastColors.CardHigh,
+              surfaceContainerHighest = CastColors.CardHigh,
+              outline = CastColors.TextSecondary,
+              outlineVariant = CastColors.Outline,
+              error = CastColors.Danger,
+              onError = Color.Black
+          )
+
+          @Composable
+          fun CastTheme(content: @Composable () -> Unit) {
+              MaterialTheme(
+                  colorScheme = CastDarkColorScheme,
+                  typography = Typography(),
+                  content = content
+              )
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'build.gradle.kts')"
+          cat > 'build.gradle.kts' <<'KTEOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          KTEOF
+
+          mkdir -p "$(dirname 'gradle.properties')"
+          cat > 'gradle.properties' <<'KTEOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          KTEOF
+
+          mkdir -p "$(dirname 'settings.gradle.kts')"
+          cat > 'settings.gradle.kts' <<'KTEOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "NileshCastUI"
+          include(":app")
+          KTEOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Nilesh-Cast-UI.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nilesh-Cast-UI-APK
+          path: Nilesh-Cast-UI.apk
+
+      - name: Publish release (easy download on phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ui-build-${{ github.run_number }}
+          name: Nilesh Cast UI build ${{ github.run_number }}
+          files: Nilesh-Cast-UI.apk
